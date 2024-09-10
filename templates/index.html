@@ -3,29 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Dash</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <title>Auto-Dash: Futuristic Dashboard Generator</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Orbitron', sans-serif;
+            background-color: #0a0e17;
+            color: #00ffff;
+            height: 100%;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        .upload-section {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        #file-upload {
+            display: none;
+        }
+        label {
+            background-color: #00ffff;
+            color: #0a0e17;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px #00ffff;
+        }
+        label:hover {
+            background-color: #0a0e17;
+            color: #00ffff;
+            box-shadow: 0 0 20px #00ffff;
+        }
+        #status, #error-message {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        #error-message {
+            color: #ff4d4d;
+        }
+        .dashboard-container {
+            flex-grow: 1;
+            background-color: rgba(0, 255, 255, 0.1);
+            border: 1px solid #00ffff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            overflow: auto;
+        }
+        #dashboard svg {
+            width: 100%;
+            height: 100%;
+        }
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(10, 14, 23, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .loading::after {
+            content: "GENERATING";
+            font-size: 2em;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font: 12px sans-serif;
+            background: #000000;
+            border: 1px solid #00ffff;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+        #filter {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        #filter label {
+            display: flex;
+            align-items: center;
+            background: none;
+            box-shadow: none;
+        }
+        #filter select {
+            margin-left: 10px;
+            background-color: #0a0e17;
+            color: #00ffff;
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Auto-Dash</h1>
-
         <div class="upload-section">
-            <h2>Upload CSV File</h2>
-            <input type="file" id="csvFile" accept=".csv">
-            <button id="uploadBtn">Upload</button>
+            <input type="file" id="file-upload" accept=".csv">
+            <label for="file-upload">Upload CSV File</label>
         </div>
-
         <div id="status"></div>
         <div id="error-message"></div>
         <div id="filter"></div>
-
         <div class="dashboard-container">
             <div id="dashboard"></div>
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+        document.getElementById('file-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            document.getElementById('status').textContent = 'Uploading and processing...';
+            document.getElementById('error-message').textContent = '';
+            showLoading();
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw err; });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                document.getElementById('status').textContent = 'Dashboard generated!';
+                console.log('Received D3.js code:', data.d3_code);
+                
+                // Clear previous dashboard and filter
+                document.getElementById('dashboard').innerHTML = '';
+                document.getElementById('filter').innerHTML = '';
+
+                // Execute D3.js code
+                try {
+                    eval(data.d3_code);
+                } catch (error) {
+                    console.error('Error executing D3.js code:', error);
+                    throw new Error('Error rendering dashboard: ' + error.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error generating dashboard. Please try again.';
+                document.getElementById('error-message').textContent = error.message || 'An unexpected error occurred.';
+            })
+            .finally(() => {
+                hideLoading();
+            });
+        });
+
+        function showLoading() {
+            const loading = document.createElement('div');
+            loading.className = 'loading';
+            document.body.appendChild(loading);
+        }
+
+        function hideLoading() {
+            const loading = document.querySelector('.loading');
+            if (loading) {
+                loading.remove();
+            }
+        }
+    </script>
 </body>
 </html>
