@@ -2,3 +2,16 @@ flask
 python-dotenv
 pandas
 google-generativeai
+streamlit
+langchain-google-genai
+pillow
+dash
+pandas
+python-dotenv
+dash-bootstrap-components
+langchain
+langchain-community
+langchain-experimental
+langchain-anthropic
+jupyter-dash
+streamlit-plotly-events
