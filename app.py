@@ -23,11 +23,11 @@ def upload_file():
         df = pd.read_csv(file)
         
         # Perform data cleaning and processing
-        df = auto_clean_feature_data(df)
+        processed_df = auto_clean_feature_data(df)
         
         # Convert the processed dataframe back to CSV
         output = io.StringIO()
-        df.to_csv(output, index=False)
+        processed_df.to_csv(output, index=False)
         output.seek(0)
         
         # Send the processed file back to the user
@@ -44,6 +44,7 @@ def auto_clean_feature_data(df):
     import google.generativeai as genai
     from dotenv import load_dotenv
     import os
+    import re
 
     # Load environment variables
     load_dotenv()
@@ -63,10 +64,14 @@ def auto_clean_feature_data(df):
     Given a DataFrame with the following columns: {columns}
     Generate Python code to create new columns based on existing ones.
     The code should:
-    1. Create  new columns
+    1. Create new columns
     2. Use other columns to create new columns
     3. Handle potential errors or missing data and datatypes error.
     4. Return the updated DataFrame
+
+    IMPORTANT:While creating new columns make sure to not add any business logic by yourself.
+    Make use of the existing columns to create new columns.
+    Create Generic columns not specific to any business logic.
 
     Provide only the Python code, no explanations.
     
@@ -84,7 +89,9 @@ def auto_clean_feature_data(df):
         
         # Handle potential datatype errors
         df['purchase_date'] = pd.to_datetime(df['purchase_date'], errors='coerce')
-        
+
+        # Extract email domain
+        df['email_domain'] = df['email'].str.split('@').str[1]
         
         return df
 
@@ -92,14 +99,48 @@ def auto_clean_feature_data(df):
     df = process_dataframe(df)
     """
 
-    # Generate code using Gemini
+    # Function to execute generated code and handle errors
+    def execute_generated_code(code, df, prompt, max_tries=3):
+        for attempt in range(max_tries):
+            try:
+                df_copy = df.copy()
+                exec(code, globals(), {'df': df_copy})
+                if len(df_copy.columns) > len(df.columns):
+                    return df_copy
+                else:
+                    raise ValueError("No new columns were added to the DataFrame")
+            except Exception as e:
+                error_message = f"Error in attempt {attempt + 1}: {str(e)}"
+                print(error_message)
+                
+                error_prompt = f"""
+                {prompt}
+
+                The previous code produced an error or did not add any new columns. Please fix the code and try again.
+                Error message: {error_message}
+
+                Previous code:
+                {code}
+
+                Please provide corrected code that addresses this error, ensures new columns are added, and follows the original instructions.
+                Only provide Python code as output.
+                """
+                
+                code = generate_code_with_gemini(error_prompt)
+                code_match = re.search(r'```python\n(.*?)```', code, re.DOTALL)
+                if code_match:
+                    code = code_match.group(1).strip()
+                else:
+                    print("No Python code block found in the generated content")
+                    continue  # Try again with a new generation
+        
+        print(f"Failed to generate working code after {max_tries} attempts.")
+        raise ValueError("Unable to process the DataFrame")
+
+    # Generate initial code using Gemini
     generated_code = generate_code_with_gemini(prompt)
-    
 
     # Extract code from markdown format
-    import re
-
-    # Find the Python code block in the generated content
     code_match = re.search(r'```python\n(.*?)```', generated_code, re.DOTALL)
     
     if code_match:
@@ -107,17 +148,17 @@ def auto_clean_feature_data(df):
         print("Extracted code:")
         print(extracted_code)
         
-        # Execute the extracted code
+        # Execute the extracted code with error handling and retries
         try:
-            exec(extracted_code)
-            print("Code executed successfully")
-        except Exception as e:
-            print(f"Error executing extracted code: {e}")
+            processed_df = execute_generated_code(extracted_code, df, prompt)
+            return processed_df
+        except ValueError as e:
+            print(f"Error: {str(e)}")
+            return df  # Return original DataFrame if processing fails
     else:
         print("No Python code block found in the generated content")
+        return df  # Return original DataFrame if no code is generated
 
-
-    return df
 
 if __name__ == '__main__':
     app.run(debug=True)
